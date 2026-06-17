@@ -86,6 +86,15 @@ export function parseModule(code: string, filePath: string): ParseResult {
               end: node.end,
               used: false,
             });
+          } else if (node.declaration.type === 'ClassDeclaration') {
+            exports.push({
+              type: 'named',
+              name: node.declaration.id?.name || '',
+              local: node.declaration.id?.name || '',
+              start: node.start,
+              end: node.end,
+              used: false,
+            });
           } else if (node.declaration.type === 'VariableDeclaration') {
             for (const decl of node.declaration.declarations) {
               if (decl.id.type === 'Identifier') {

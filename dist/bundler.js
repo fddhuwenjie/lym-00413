@@ -271,8 +271,20 @@ class Bundler {
             size: code.length,
         };
     }
-    generateChunkCode(chunkName, modules) {
+    generateChunkCode(chunkName, modules, allChunks) {
         const moduleEntries = [];
+        const dynChunkMap = new Map();
+        for (const mod of modules) {
+            const moduleId = this.getModuleId(mod.path);
+            for (const dynImp of mod.dynamicImports) {
+                const depPath = this.resolveDepPath(dynImp.source, mod.path);
+                if (depPath) {
+                    const depId = this.getModuleId(depPath);
+                    const depChunkName = `chunk_${path.basename(depPath, path.extname(depPath))}`;
+                    dynChunkMap.set(depId, depChunkName);
+                }
+            }
+        }
         for (const mod of modules) {
             const moduleId = this.getModuleId(mod.path);
             let code = mod.code || '';
@@ -286,19 +298,58 @@ class Bundler {
                 code = this.transformEsmModule(code, mod);
                 code = this.transformCjsModulePostEsm(code, mod);
             }
-            moduleEntries.push(`    ${moduleId}: function(module, exports, __mini_require__) {\n${this.indent(code, 6)}\n    }`);
+            for (const [depId, depChunkName] of dynChunkMap) {
+                const re = new RegExp(`__mini_require__\\(${depId}\\)`, 'g');
+                code = code.replace(re, `window.__mini_require_chunk__("${depChunkName}", ${depId})`);
+            }
+            moduleEntries.push(`  ${moduleId}: function(module, exports, __mini_require__) {\n${this.indent(code, 4)}\n  }`);
         }
         const lines = [];
         lines.push(`// Chunk: ${chunkName}`);
-        lines.push(`(function(modules) {`);
-        lines.push(`  var installedModules = {};`);
+        lines.push(`(function() {`);
+        lines.push(`  if (typeof window === 'undefined') return;`);
+        lines.push(`  if (!window.__mini_modules__) window.__mini_modules__ = {};`);
+        lines.push(`  if (!window.__mini_installed__) window.__mini_installed__ = {};`);
+        lines.push(`  if (!window.__mini_chunk_loaded__) window.__mini_chunk_loaded__ = {};`);
+        lines.push(`  if (!window.__mini_chunk_promises__) window.__mini_chunk_promises__ = {};`);
+        lines.push(`  window.__mini_chunk_loaded__["${chunkName}"] = true;`);
+        lines.push(`  var chunkModules = {`);
+        lines.push(moduleEntries.join(',\n'));
+        lines.push(`  };`);
+        lines.push(`  for (var _k in chunkModules) {`);
+        lines.push(`    if (Object.prototype.hasOwnProperty.call(chunkModules, _k)) {`);
+        lines.push(`      window.__mini_modules__[_k] = chunkModules[_k];`);
+        lines.push(`    }`);
+        lines.push(`  }`);
         lines.push(`  function __mini_require__(moduleId) {`);
-        lines.push(`    if (installedModules[moduleId]) return installedModules[moduleId].exports;`);
-        lines.push(`    var module = installedModules[moduleId] = { exports: {}, id: moduleId, loaded: false };`);
-        lines.push(`    modules[moduleId].call(module.exports, module, module.exports, __mini_require__);`);
+        lines.push(`    if (window.__mini_installed__[moduleId]) return window.__mini_installed__[moduleId].exports;`);
+        lines.push(`    if (!window.__mini_modules__[moduleId]) {`);
+        lines.push(`      throw new Error('[MiniBundler] Module not found: ' + moduleId + ' (check chunk loading order)');`);
+        lines.push(`    }`);
+        lines.push(`    var module = window.__mini_installed__[moduleId] = { exports: {}, id: moduleId, loaded: false };`);
+        lines.push(`    window.__mini_modules__[moduleId].call(module.exports, module, module.exports, __mini_require__);`);
         lines.push(`    module.loaded = true;`);
         lines.push(`    return module.exports;`);
         lines.push(`  }`);
+        lines.push(`  function __mini_require_chunk__(chunkName, moduleId) {`);
+        lines.push(`    if (window.__mini_chunk_loaded__[chunkName]) {`);
+        lines.push(`      return Promise.resolve(__mini_require__(moduleId));`);
+        lines.push(`    }`);
+        lines.push(`    if (window.__mini_chunk_promises__[chunkName]) {`);
+        lines.push(`      return window.__mini_chunk_promises__[chunkName].then(function() { return __mini_require__(moduleId); });`);
+        lines.push(`    }`);
+        lines.push(`    var script = document.createElement('script');`);
+        lines.push(`    script.src = chunkName + '.js';`);
+        lines.push(`    var promise = new Promise(function(resolve, reject) {`);
+        lines.push(`      script.onload = resolve;`);
+        lines.push(`      script.onerror = reject;`);
+        lines.push(`    });`);
+        lines.push(`    window.__mini_chunk_promises__[chunkName] = promise;`);
+        lines.push(`    document.head.appendChild(script);`);
+        lines.push(`    return promise.then(function() { return __mini_require__(moduleId); });`);
+        lines.push(`  }`);
+        lines.push(`  window.__mini_require__ = __mini_require__;`);
+        lines.push(`  window.__mini_require_chunk__ = __mini_require_chunk__;`);
         if (chunkName === 'main') {
             for (const mod of modules) {
                 if (mod.isEntry) {
@@ -306,12 +357,7 @@ class Bundler {
                 }
             }
         }
-        lines.push(`  if (typeof window !== 'undefined') {`);
-        lines.push(`    window.__mini_require__ = __mini_require__;`);
-        lines.push(`  }`);
-        lines.push(`})({`);
-        lines.push(moduleEntries.join(',\n'));
-        lines.push(`});`);
+        lines.push(`})();`);
         return lines.join('\n');
     }
     transformCjsModule(code, mod) {
@@ -501,8 +547,12 @@ class Bundler {
         fs.writeFileSync(path.join(outputDir, 'index.html'), html);
     }
     generateHTML(chunks) {
-        const nonDynamicScripts = chunks
-            .filter(c => !c.isDynamic)
+        const nonDynamicChunks = chunks.filter(c => !c.isDynamic);
+        nonDynamicChunks.sort((a, b) => {
+            const order = (name) => name === 'shared' ? 0 : (name === 'main' ? 1 : 2);
+            return order(a.name) - order(b.name);
+        });
+        const nonDynamicScripts = nonDynamicChunks
             .map(c => `    <script src="${c.isEntry ? 'main.js' : c.name + '.js'}"></script>`)
             .join('\n');
         const hmrScript = this.config.hmr

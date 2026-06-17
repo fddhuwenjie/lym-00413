@@ -5,8 +5,8 @@ import * as validators from './services/validators.js';
 import { logger } from './utils/logger.js';
 import { config } from './utils/config.js';
 import { EventEmitter } from './services/events.js';
-import { cjsMath } from './cjs/cjs-math.js';
-import { cjsString } from './cjs/cjs-string.js';
+import * as cjsMath from './cjs/cjs-math.js';
+import * as cjsString from './cjs/cjs-string.js';
 
 const eventBus = new EventEmitter();
 

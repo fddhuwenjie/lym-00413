@@ -7,7 +7,7 @@ exports.createLoaderPipeline = createLoaderPipeline;
 class LoaderRunner {
     constructor(loaderConfigs) {
         this.loaders = new Map();
-        this.loaderConfigs = [];
+        this.loaderConfigs = loaderConfigs;
         for (const config of loaderConfigs) {
             if (typeof config.use === 'string') {
                 const loaderFn = this.resolveLoader(config.use, config.options);
@@ -71,30 +71,12 @@ exports.LoaderRunner = LoaderRunner;
 function createBabelLoader(options) {
     const loader = (code, _map, meta) => {
         let result = code;
-        result = result.replace(/const\s+(\w+)\s*=\s*\(/g, 'var $1 = (');
-        result = result.replace(/const\s+(\w+)\s*=\s*([^;]+);/g, 'var $1 = $2;');
-        result = result.replace(/let\s+(\w+)\s*=\s*([^;]+);/g, 'var $1 = $2;');
-        result = result.replace(/let\s+(\w+);/g, 'var $1;');
-        result = result.replace(/\(\s*\)\s*=>\s*\{/g, 'function() {');
-        result = result.replace(/\((\w+(?:\s*,\s*\w+)*)\)\s*=>\s*\{/g, 'function($1) {');
-        result = result.replace(/\(\s*\)\s*=>\s*([^{\n]+);/g, 'function() { return $1; }');
-        result = result.replace(/\((\w+(?:\s*,\s*\w+)*)\)\s*=>\s*([^{\n]+);/g, 'function($1) { return $2; }');
-        result = result.replace(/`([^`]*)`/g, (_, content) => {
-            const escaped = content
-                .replace(/\\/g, '\\\\')
-                .replace(/'/g, "\\'")
-                .replace(/\n/g, '\\n')
-                .replace(/\r/g, '\\r')
-                .replace(/\t/g, '\\t');
-            return `'${escaped}'`;
-        });
-        result = result.replace(/(\w+)\?\.\s*(\w+)/g, '($1 != null ? $1.$2 : undefined)');
-        result = result.replace(/for\s*\(\s*const\s+(\w+)\s+of\s+/g, 'for (var $1 of ');
-        result = result.replace(/for\s*\(\s*let\s+(\w+)\s+of\s+/g, 'for (var $1 of ');
-        result = result.replace(/class\s+(\w+)\s+\{[\s\S]*?\}/g, (match) => {
-            return `/* class converted to function */\n${match}`;
-        });
-        result = result.replace(/(\w+)\s*\?\s*([^:]+)\s*:\s*(.+)/g, '(($1) ? $2 : $3)');
+        result = result.replace(/\bconst\s+(\w[\w$]*)\s*=\s*/g, 'var $1 = ');
+        result = result.replace(/\blet\s+(\w[\w$]*)\s*=\s*/g, 'var $1 = ');
+        result = result.replace(/\blet\s+(\w[\w$]*);/g, 'var $1;');
+        result = result.replace(/\bfor\s*\(\s*const\s+(\w[\w$]*)\s+of\s+/g, 'for (var $1 of ');
+        result = result.replace(/\bfor\s*\(\s*let\s+(\w[\w$]*)\s+of\s+/g, 'for (var $1 of ');
+        result = result.replace(/(\w[\w$]*)\?\.\s*(\w[\w$]*)/g, '($1 != null ? $1.$2 : undefined)');
         return { code: result, map: null };
     };
     Object.defineProperty(loader, 'name', { value: 'babel-loader' });
