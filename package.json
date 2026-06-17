@@ -1,0 +1,28 @@
+{
+  "name": "mini-bundler",
+  "version": "1.0.0",
+  "description": "A JS/TS module bundler with tree shaking, code splitting, HMR, source maps, and loader pipeline",
+  "main": "dist/cli.js",
+  "bin": {
+    "mini-bundler": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/cli.js",
+    "dev": "tsc -w"
+  },
+  "dependencies": {
+    "acorn": "^8.11.3",
+    "acorn-walk": "^8.3.2",
+    "magic-string": "^0.30.8",
+    "ws": "^8.16.0",
+    "chalk": "^4.1.2",
+    "chokidar": "^3.6.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.2",
+    "@types/node": "^20.11.0",
+    "@types/ws": "^8.5.10",
+    "@types/acorn": "^6.0.1"
+  }
+}
